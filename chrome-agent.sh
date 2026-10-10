@@ -14,6 +14,24 @@ PROFILE_MATCH="--user-data-dir=$PROFILE"
 SOURCE_PROFILE="${CHROME_AGENT_SOURCE:-$HOME/.config/google-chrome}"
 OZONE_FLAG="--ozone-platform=x11"
 
+# Callers started outside the desktop session (a systemd user unit, a terminal
+# without X) may lack the display variables; Chrome on X11 then exits at once.
+# Borrow them from the session's systemd environment, then fall back to :0.
+if [ -z "${DISPLAY:-}" ] || [ -z "${XAUTHORITY:-}" ]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            DISPLAY|XAUTHORITY|WAYLAND_DISPLAY)
+                [ -n "${!key:-}" ] || export "$key=$value" ;;
+        esac
+    done < <(systemctl --user show-environment 2>/dev/null || true)
+    export DISPLAY="${DISPLAY:-:0}"
+    if [ -z "${XAUTHORITY:-}" ]; then
+        for auth in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/.mutter-Xwaylandauth.*; do
+            [ -f "$auth" ] && export XAUTHORITY="$auth" && break
+        done
+    fi
+fi
+
 chrome_pid() {
     if [ -f "$PIDFILE" ]; then
         local pid
